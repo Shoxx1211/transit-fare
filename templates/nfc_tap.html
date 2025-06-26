@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en" >
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>NFC Tap - Transit Fare System</title>
+  
+  <!-- Bootstrap CSS CDN -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  
+  <style>
+    body {
+      background: #f0f2f5;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      padding: 1rem;
+    }
+    .card {
+      max-width: 400px;
+      width: 100%;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      background: white;
+      text-align: center;
+    }
+    #status {
+      font-size: 1.2rem;
+      margin-top: 1.5rem;
+      min-height: 3rem;
+      font-weight: 600;
+    }
+    .spinner-border {
+      width: 3rem;
+      height: 3rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2 class="mb-3">🚍 Transit NFC Tap</h2>
+    <p>Tap your card to start or end your trip.</p>
+    
+    <div id="status" class="text-secondary">
+      <div class="spinner-border text-primary" role="status" id="spinner">
+        <span class="visually-hidden">Loading...</span>
+      </div>
+      Waiting for NFC device...
+    </div>
+  </div>
+  
+  <script>
+    async function startNFC() {
+      const statusEl = document.getElementById("status");
+      const spinner = document.getElementById("spinner");
+
+      if ("NDEFReader" in window) {
+        const ndef = new NDEFReader();
+        try {
+          await ndef.scan();
+          statusEl.classList.remove("text-secondary");
+          statusEl.classList.add("text-success");
+          statusEl.innerHTML = "✅ Scanning started. Please tap your card...";
+          spinner.style.display = "none";
+
+          ndef.onreading = async (event) => {
+            const decoder = new TextDecoder();
+            for (const record of event.message.records) {
+              const cardId = decoder.decode(record.data);
+              statusEl.classList.remove("text-success");
+              statusEl.classList.add("text-primary");
+              statusEl.innerHTML = `🎉 Card detected: <strong>${cardId}</strong><br>Processing...`;
+
+              // Send to backend (simulate tap-in/out)
+              try {
+                const res = await fetch("/nfc_tap", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ card_id: cardId }),
+                });
+                const json = await res.json();
+                if (res.ok) {
+                  statusEl.classList.remove("text-primary");
+                  statusEl.classList.add("text-success");
+                  statusEl.innerHTML = `✅ ${json.message}`;
+                } else {
+                  statusEl.classList.remove("text-primary");
+                  statusEl.classList.add("text-danger");
+                  statusEl.innerHTML = `❌ ${json.message}`;
+                }
+              } catch (error) {
+                statusEl.classList.remove("text-primary");
+                statusEl.classList.add("text-danger");
+                statusEl.innerHTML = `❌ Network error: ${error.message}`;
+              }
+            }
+          };
+        } catch (error) {
+          spinner.style.display = "none";
+          statusEl.classList.remove("text-secondary");
+          statusEl.classList.add("text-danger");
+          statusEl.innerHTML = `❌ NFC Error: ${error.message}`;
+        }
+      } else {
+        spinner.style.display = "none";
+        statusEl.classList.remove("text-secondary");
+        statusEl.classList.add("text-danger");
+        statusEl.innerHTML = "❌ Web NFC is not supported on this device.";
+      }
+    }
+
+    startNFC();
+  </script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block content %}
+  <h2>User: {{ user[1] }}</h2>
+  <p>Card ID: {{ user[0] }}</p>
+  <p>Balance: R{{ user[2] }}</p>
+  <p>Status: {{ 'In trip' if user[3] else 'Not in trip' }}</p>
+
+  <form method="POST" action="{{ url_for('load_money') }}">
+    <input type="hidden" name="card_id" value="{{ user[0] }}">
+    <input type="number" name="amount" placeholder="Load amount" required>
+    <button type="submit">Load Money</button>
+  </form>
+
+  <p>
+    <a href="{{ url_for('tap_in', card_id=user[0]) }}">Tap In</a> |
+    <a href="{{ url_for('tap_out', card_id=user[0]) }}">Tap Out</a> |
+    <a href="{{ url_for('view_history', card_id=user[0]) }}">Trip History</a>
+  </p>
+{% endblock %}

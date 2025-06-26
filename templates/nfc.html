@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Real NFC Tap</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2rem; }
+    #status { margin-top: 20px; font-weight: bold; }
+    button { padding: 1rem 2rem; font-size: 1.2rem; }
+  </style>
+</head>
+<body>
+  <h1>Tap Your Card</h1>
+  <button id="startScan">Start NFC Scan</button>
+  <p id="status">Waiting to start...</p>
+
+  <script>
+    const status = document.getElementById('status');
+    const startScan = document.getElementById('startScan');
+
+    async function scanNFC() {
+      if ('NDEFReader' in window) {
+        try {
+          const ndef = new NDEFReader();
+          await ndef.scan();
+          status.textContent = 'Scan started, tap your card now...';
+
+          ndef.onreadingerror = () => {
+            status.textContent = '❌ NFC reading error, please try again.';
+          };
+
+          ndef.onreading = event => {
+            const message = event.message;
+            let cardId = null;
+
+            for (const record of message.records) {
+              // Assuming card ID is stored as text in the NFC tag
+              if (record.recordType === "text") {
+                const textDecoder = new TextDecoder(record.encoding);
+                cardId = textDecoder.decode(record.data);
+              }
+            }
+
+            if (cardId) {
+              status.textContent = `Card detected: ${cardId}. Processing...`;
+              // Send to backend
+              fetch('/nfc_tap', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ card_id: cardId })
+              })
+              .then(response => response.json())
+              .then(data => {
+                status.textContent = data.message;
+              })
+              .catch(err => {
+                status.textContent = '❌ Error communicating with server.';
+                console.error(err);
+              });
+            } else {
+              status.textContent = '❌ No valid card ID found on NFC tag.';
+            }
+          };
+        } catch (error) {
+          status.textContent = `❌ NFC scan failed to start: ${error.message}`;
+        }
+      } else {
+        status.textContent = '❌ Web NFC is not supported on this device/browser.';
+      }
+    }
+
+    startScan.addEventListener('click', scanNFC);
+  </script>
+</body>
+</html>

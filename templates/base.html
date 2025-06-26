@@ -1,0 +1,20 @@
+<!doctype html>
+<html>
+<head>
+  <title>Re-LoadiT Transit Fare System</title>
+</head>
+<body>
+  <h1>🚍 Re-LoadiT Transit Fare System</h1>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <ul>
+      {% for message in messages %}
+        <li>{{ message }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
+  <hr>
+  {% block content %}{% endblock %}
+</body>
+</html>

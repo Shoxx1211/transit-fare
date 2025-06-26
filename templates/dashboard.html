@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Dashboard | Smart Transit</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body {
+      background-color: #f5f7fa;
+    }
+    .card {
+      border-radius: 12px;
+    }
+    .title-icon {
+      font-size: 2rem;
+      margin-right: 8px;
+    }
+    .user-info p {
+      font-size: 1.1rem;
+      margin-bottom: 8px;
+    }
+    .balance-highlight {
+      font-weight: bold;
+      color: #198754;
+      font-size: 1.2rem;
+    }
+    code {
+      background-color: #e9ecef;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container py-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1 class="d-flex align-items-center"><span class="title-icon">🚍</span> Dashboard</h1>
+      <a href="{{ url_for('logout') }}" class="btn btn-outline-secondary">Logout</a>
+    </div>
+
+    <div class="card shadow-sm p-4">
+      <h2 class="mb-3 text-primary">👋 Welcome, {{ user.name }} {{ user.surname }}</h2>
+      <div class="user-info">
+        <p><strong>Email:</strong> {{ user.email }}</p>
+        <p><strong>Date of Birth:</strong> {{ user.dob }}</p>
+        <p><strong>Your Transit Card ID:</strong> <code>{{ user.card_id }}</code></p>
+        <p><strong>Balance:</strong> <span class="balance-highlight">R{{ "%.2f"|format(user.balance) }}</span></p>
+        <a href="{{ url_for('top_up', card_id=user.card_id) }}" class="btn btn-success mt-3">
+  💳 Top Up Balance
+</a>
+      </div>
+      <hr>
+      <div class="text-end">
+        <a href="{{ url_for('simulate_nfc') }}" class="btn btn-success">🚏 Simulate NFC Tap</a>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
