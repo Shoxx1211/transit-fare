@@ -48,9 +48,11 @@ def get_fare(distance_km):
 # ------------------------------ ROUTES ------------------------------ #
 @app.route('/')
 def home():
-    print("Working directory:", os.getcwd())
+    print("Looking for template at:", os.path.abspath('templates/index.html'))
     return render_template('index.html')
 
+if __name__ == "__main__":
+    app.run()
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     conn = get_db()
