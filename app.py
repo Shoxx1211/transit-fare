@@ -11,7 +11,7 @@ import requests
 from db import DB_NAME, init_db, get_connection
 from config import PAYSTACK_SECRET_KEY
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
 
 # ------------------------------ DB HANDLING ------------------------------ #
