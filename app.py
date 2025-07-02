@@ -173,46 +173,59 @@ def nfc_tap():
     INSERT INTO trip_history (card_id, name, start_time, end_time, fare)
     VALUES (?, ?, ?, ?, ?)
 ''', (card_id, user['name'], current_trip['start_time'], now, fare))
+
+# Track simulated tap-in sessions
 @app.route("/simulate_nfc", methods=["GET", "POST"])
 def simulate_nfc():
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute("SELECT id, card_id, name || ' ' || surname AS full_name, balance FROM users")
-    rows = cursor.fetchall()
+    users = {row["card_id"]: row for row in cursor.fetchall()}
 
-    users = {row["card_id"]: row for row in rows}
     message = None
+    stage = "tap_in"
 
     if request.method == "POST":
         card_id = request.form.get("card_id")
-        start_lat = float(request.form.get("start_lat", 0))
-        start_lon = float(request.form.get("start_lon", 0))
-        end_lat = float(request.form.get("end_lat", 0))
-        end_lon = float(request.form.get("end_lon", 0))
+        lat = float(request.form.get("lat"))
+        lon = float(request.form.get("lon"))
+        stage = request.form.get("stage")
 
         user = users.get(card_id)
-        if user:
-            distance_km = calculate_distance_km(start_lat, start_lon, end_lat, end_lon)
-            fare = get_fare(distance_km)
-            if user["balance"] >= fare:
-                new_balance = user["balance"] - fare
-                cursor.execute("UPDATE users SET balance = ? WHERE id = ?", (new_balance, user["id"]))
-                cursor.execute(
-                    "INSERT INTO trip_sessions (user_id, card_id, fare_amount) VALUES (?, ?, ?)",
-                    (user["id"], card_id, fare)
-                )
-                conn.commit()
-                message = f"✅ Fare deducted: R{fare}. Distance: {distance_km:.2f} km. New balance for {user['full_name']}: R{new_balance}"
+        if not user:
+            message = "❌ Card not found."
+        elif stage == "tap_in":
+            # Store tap-in data
+            conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
+            conn.execute('INSERT INTO trip_sessions (card_id, start_time, start_lat, start_lon) VALUES (?, ?, ?, ?)',
+                         (card_id, time.time(), lat, lon))
+            conn.commit()
+            message = f"✅ Tap In successful for {user['full_name']}"
+            stage = "tap_out"
+        elif stage == "tap_out":
+            # Retrieve tap-in data
+            trip = conn.execute('SELECT * FROM trip_sessions WHERE card_id = ?', (card_id,)).fetchone()
+            if not trip:
+                message = "❌ No Tap In found. Please tap in first."
             else:
-                message = f"❌ Insufficient balance for {user['full_name']} (R{user['balance']})"
-        else:
-            message = "❌ Card ID not found."
+                distance_km = calculate_distance_km(trip['start_lat'], trip['start_lon'], lat, lon)
+                fare = get_fare(distance_km)
+                if user["balance"] < fare:
+                    message = f"❌ Insufficient balance (R{user['balance']:.2f}). Fare is R{fare:.2f}"
+                else:
+                    new_balance = user["balance"] - fare
+                    conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
+                    conn.execute('UPDATE users SET balance = ? WHERE card_id = ?', (new_balance, card_id))
+                    conn.execute('''
+                        INSERT INTO trip_history (card_id, name, start_time, end_time, fare)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (card_id, user['full_name'], trip['start_time'], time.time(), fare))
+                    conn.commit()
+                    message = f"✅ Tap Out complete. Fare: R{fare:.2f}. New balance: R{new_balance:.2f}"
+                    stage = "tap_in"
 
-    return render_template(
-        "simulate_nfc.html", 
-        users={cid: u["full_name"] for cid, u in users.items()}, 
-        message=message
-    )
+    return render_template("simulate_nfc.html", users=users, message=message, stage=stage)
+
 
 @app.route('/tap_in', methods=['GET', 'POST'])
 def tap_in():
