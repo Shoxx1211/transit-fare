@@ -214,17 +214,17 @@ def simulate_nfc():
         message=message
     )
 
-# Modify your `/tap_in/<card_id>` route to store GPS location
-@app.route('/tap_in/<card_id>', methods=['GET', 'POST'])
-def tap_in(card_id):
+@app.route('/tap_in', methods=['GET', 'POST'])
+def tap_in():
     conn = get_db()
 
     if request.method == 'POST':
+        card_id = request.form.get('card_id')
         lat = request.form.get('lat')
         lon = request.form.get('lon')
 
-        if not lat or not lon:
-            return "❌ Location not provided", 400
+        if not card_id or not lat or not lon:
+            return "❌ Card ID or Location not provided", 400
 
         conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
         conn.execute(
@@ -235,21 +235,21 @@ def tap_in(card_id):
 
         return render_template('tap_in_success.html', card_id=card_id, lat=lat, lon=lon)
 
-    return render_template('tap_in.html', card_id=card_id)
+    return render_template('tap_in.html')
 
 
-# Modify your `/tap_out/<card_id>` route to calculate distance-based fare
-@app.route('/tap_out/<card_id>', methods=['GET', 'POST'])
-def tap_out(card_id):
+
+@app.route('/tap_out', methods=['GET', 'POST'])
+def tap_out():
     conn = get_db()
 
     if request.method == 'POST':
-        print("[DEBUG] Tap-out POST request received")
+        card_id = request.form.get('card_id')
         lat2 = request.form.get('lat')
         lon2 = request.form.get('lon')
 
-        if not lat2 or not lon2:
-            return "❌ Location not provided", 400
+        if not card_id or not lat2 or not lon2:
+            return "❌ Card ID or Location not provided", 400
 
         trip = conn.execute('SELECT * FROM trip_sessions WHERE card_id = ?', (card_id,)).fetchone()
         if not trip:
@@ -276,7 +276,8 @@ def tap_out(card_id):
 
         return render_template('tap_out_success.html', card_id=card_id, fare=fare, balance=new_balance)
 
-    return render_template('tap_out.html', card_id=card_id)
+    return render_template('tap_out.html')
+
 
 @app.route('/test_tap_out', methods=['POST'])
 def test_tap_out():

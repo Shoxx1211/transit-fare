@@ -1,70 +1,37 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <title>Transit Tap Out</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <!-- Bootstrap CSS (from CDN) -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-</head>
-<body class="bg-light">
-
-    <div class="container mt-5">
-        <div class="card shadow">
-            <div class="card-body">
-                <h3 class="card-title text-center mb-4">🚍 Tap Out</h3>
-
-                <p class="text-muted text-center">Card ID: <strong>{{ card_id }}</strong></p>
-
-                <form method="POST" id="tapOutForm">
-                    <input type="hidden" name="lat" id="lat" />
-                    <input type="hidden" name="lon" id="lon" />
-
-                    <div class="d-grid">
-                        <button type="submit" class="btn btn-danger" id="tapOutBtn">Tap Out (with GPS)</button>
-                    </div>
-                </form>
-
-                <div id="status" class="mt-3 text-center text-secondary"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScript for location capture -->
+    <title>Tap Out</title>
     <script>
-        const form = document.getElementById('tapOutForm');
-        const status = document.getElementById('status');
-        const latInput = document.getElementById('lat');
-        const lonInput = document.getElementById('lon');
-        const btn = document.getElementById('tapOutBtn');
-
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            status.textContent = '📍 Detecting your location...';
-            btn.disabled = true;
-
-            if (!navigator.geolocation) {
-                status.textContent = '❌ Geolocation is not supported by your browser.';
-                btn.disabled = false;
-                return;
+        window.onload = function () {
+            // Get card_id from URL parameters
+            const urlParams = new URLSearchParams(window.location.search);
+            const cardId = urlParams.get('card_id');
+            if (cardId) {
+                document.getElementById('card_id').value = cardId;
             }
 
-            navigator.geolocation.getCurrentPosition(
-                (position) => {
-                    latInput.value = position.coords.latitude;
-                    lonInput.value = position.coords.longitude;
-                    form.submit();
-                },
-                (error) => {
-                    status.textContent = `❌ Error getting location: ${error.message}`;
-                    btn.disabled = false;
-                }
-            );
-        });
+            // Get GPS location
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(function (position) {
+                    document.getElementById('lat').value = position.coords.latitude;
+                    document.getElementById('lon').value = position.coords.longitude;
+                }, function (error) {
+                    alert('Error getting GPS location: ' + error.message);
+                });
+            } else {
+                alert('Geolocation is not supported by this browser.');
+            }
+        };
     </script>
-
-    <!-- Optional Bootstrap JS for modal, alerts (if needed) -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</head>
+<body>
+    <h2>🚍 Tap Out</h2>
+    <form method="POST">
+        <input type="hidden" id="card_id" name="card_id" value="">
+        <input type="hidden" id="lat" name="lat" value="">
+        <input type="hidden" id="lon" name="lon" value="">
+        <button type="submit">Complete Trip</button>
+    </form>
 </body>
 </html>

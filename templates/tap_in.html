@@ -1,56 +1,28 @@
+<!-- templates/tap_in.html -->
 <!DOCTYPE html>
-<html lang="en" >
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>GPS Tap In - Transit Fare System</title>
-
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <title>Tap In</title>
 </head>
-<body class="bg-light">
-  <div class="container mt-5 p-4 bg-white rounded shadow-sm" style="max-width: 480px;">
-    <h3>GPS Tap In - Card {{ card_id }}</h3>
-    <p>Click the button to detect your location and tap in.</p>
+<body>
+    <h1>🚍 Tap In</h1>
+    <form method="POST" onsubmit="fillLocation()">
+        <label for="card_id">Enter Card ID:</label>
+        <input type="text" name="card_id" required><br><br>
 
-    <form method="POST" id="tapInForm">
-      <input type="hidden" name="lat" id="lat" />
-      <input type="hidden" name="lon" id="lon" />
-      <button type="submit" class="btn btn-primary w-100" id="tapInBtn">Tap In</button>
+        <input type="hidden" name="lat" id="lat">
+        <input type="hidden" name="lon" id="lon">
+
+        <button type="submit">Tap In</button>
     </form>
 
-    <div id="status" class="mt-3 text-center"></div>
-  </div>
-
-<script>
-  const form = document.getElementById('tapInForm');
-  const status = document.getElementById('status');
-  const latInput = document.getElementById('lat');
-  const lonInput = document.getElementById('lon');
-  const btn = document.getElementById('tapInBtn');
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    status.textContent = 'Detecting location...';
-    btn.disabled = true;
-
-    if (!navigator.geolocation) {
-      status.textContent = '❌ Geolocation is not supported by your browser.';
-      btn.disabled = false;
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        latInput.value = pos.coords.latitude;
-        lonInput.value = pos.coords.longitude;
-        form.submit();
-      },
-      (err) => {
-        status.textContent = `❌ Error getting location: ${err.message}`;
-        btn.disabled = false;
-      }
-    );
-  });
-</script>
+    <script>
+        function fillLocation() {
+            navigator.geolocation.getCurrentPosition(function(position) {
+                document.getElementById('lat').value = position.coords.latitude;
+                document.getElementById('lon').value = position.coords.longitude;
+            });
+        }
+    </script>
 </body>
 </html>
