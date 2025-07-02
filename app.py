@@ -48,6 +48,7 @@ def get_fare(distance_km):
 # ------------------------------ ROUTES ------------------------------ #
 @app.route('/')
 def home():
+    print("Working directory:", os.getcwd())
     return render_template('index.html')
 
 @app.route('/register', methods=['GET', 'POST'])
