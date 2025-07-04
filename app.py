@@ -7,12 +7,31 @@ import math
 import sqlite3
 from datetime import datetime
 import requests
-
+from math import radians, cos, sin, asin, sqrt
 from db import DB_NAME, init_db, get_connection
 from config import PAYSTACK_SECRET_KEY
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
+
+def calculate_distance_km(lat1, lon1, lat2, lon2):
+    lat1, lon1, lat2, lon2 = map(radians, [lat1, lon1, lat2, lon2])
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    c = 2 * asin(sqrt(a))
+    r = 6371.0  # Earth radius in km
+    return c * r
+
+def get_fare(distance_km):
+    if distance_km <= 2:
+        return 5.0
+    elif distance_km <= 5:
+        return 10.0
+    elif distance_km <= 10:
+        return 15.0
+    else:
+        return 20.0
 
 # ------------------------------ DB HANDLING ------------------------------ #
 def get_db():
@@ -182,52 +201,152 @@ def nfc_tap():
 def simulate_nfc():
     conn = get_db()
     cursor = conn.cursor()
+
+    # Fetch users into a dict keyed by card_id for quick lookup
     cursor.execute("SELECT id, card_id, name || ' ' || surname AS full_name, balance FROM users")
     users = {row["card_id"]: row for row in cursor.fetchall()}
 
     message = None
-    stage = "tap_in"
+    stage = "tap_in"  # default stage for UI
 
     if request.method == "POST":
         card_id = request.form.get("card_id")
-        lat = float(request.form.get("lat"))
-        lon = float(request.form.get("lon"))
+        lat_str = request.form.get("lat")
+        lon_str = request.form.get("lon")
         stage = request.form.get("stage")
+
+        # Input validation
+        if not card_id or lat_str is None or lon_str is None:
+            message = "❌ Missing card ID or location coordinates."
+            return render_template("simulate_nfc.html", users=users, message=message, stage=stage)
+
+        try:
+            lat = float(lat_str)
+            lon = float(lon_str)
+        except ValueError:
+            message = "❌ Latitude and longitude must be valid numbers."
+            return render_template("simulate_nfc.html", users=users, message=message, stage=stage)
 
         user = users.get(card_id)
         if not user:
             message = "❌ Card not found."
-        elif stage == "tap_in":
-            # Store tap-in data
+            return render_template("simulate_nfc.html", users=users, message=message, stage=stage)
+
+        if stage == "tap_in":
+            # Clear any previous unfinished trip session for this card
             conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
-            conn.execute('INSERT INTO trip_sessions (card_id, start_time, start_lat, start_lon) VALUES (?, ?, ?, ?)',
-                         (card_id, time.time(), lat, lon))
+
+            # Insert a new trip session with current timestamp and start coordinates
+            conn.execute('''
+                INSERT INTO trip_sessions (card_id, start_lat, start_lon)
+                VALUES (?, ?, ?)
+            ''', (card_id, lat, lon))
+
             conn.commit()
-            message = f"✅ Tap In successful for {user['full_name']}"
+            message = f"✅ Tap In successful for {user['full_name']}."
             stage = "tap_out"
+
         elif stage == "tap_out":
-            # Retrieve tap-in data
+            # Retrieve the tap-in trip session data
             trip = conn.execute('SELECT * FROM trip_sessions WHERE card_id = ?', (card_id,)).fetchone()
+
             if not trip:
                 message = "❌ No Tap In found. Please tap in first."
             else:
+                # Calculate distance travelled
                 distance_km = calculate_distance_km(trip['start_lat'], trip['start_lon'], lat, lon)
                 fare = get_fare(distance_km)
+
                 if user["balance"] < fare:
-                    message = f"❌ Insufficient balance (R{user['balance']:.2f}). Fare is R{fare:.2f}"
+                    message = f"❌ Insufficient balance (R{user['balance']:.2f}). Fare is R{fare:.2f}."
                 else:
                     new_balance = user["balance"] - fare
+
+                    # Remove the trip session now that trip ended
                     conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
+
+                    # Update user balance
                     conn.execute('UPDATE users SET balance = ? WHERE card_id = ?', (new_balance, card_id))
+
+                    # Insert into trip history, converting timestamps to datetime strings
+                    start_time_str = trip['timestamp']  # your table uses timestamp column for start time
+                    end_time_str = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+
                     conn.execute('''
                         INSERT INTO trip_history (card_id, name, start_time, end_time, fare)
                         VALUES (?, ?, ?, ?, ?)
-                    ''', (card_id, user['full_name'], trip['start_time'], time.time(), fare))
+                    ''', (card_id, user['full_name'], start_time_str, end_time_str, fare))
+
                     conn.commit()
-                    message = f"✅ Tap Out complete. Fare: R{fare:.2f}. New balance: R{new_balance:.2f}"
-                    stage = "tap_in"
+                    message = f"✅ Tap Out complete. Fare: R{fare:.2f}. New balance: R{new_balance:.2f}."
+                    stage = "tap_in"  # ready for next trip
 
     return render_template("simulate_nfc.html", users=users, message=message, stage=stage)
+
+@app.route("/simulate_nfc_tap_in", methods=["GET", "POST"])
+def simulate_nfc_tap_in():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, card_id, name || ' ' || surname AS full_name, balance FROM users")
+    users = {row["card_id"]: row for row in cursor.fetchall()}
+
+    message = None
+    if request.method == "POST":
+        card_id = request.form.get("card_id")
+        lat = float(request.form.get("lat"))
+        lon = float(request.form.get("lon"))
+
+        user = users.get(card_id)
+        if not user:
+            message = "❌ Card not found."
+        else:
+            # Remove any previous tap-in
+            conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
+            conn.execute('''
+                INSERT INTO trip_sessions (card_id, start_time, start_lat, start_lon)
+                VALUES (?, ?, ?, ?)
+            ''', (card_id, time.time(), lat, lon))
+            conn.commit()
+            return redirect(url_for("simulate_nfc_tap_out", card_id=card_id))
+
+    return render_template("simulate_nfc_tap_in.html", users=users, message=message)
+
+@app.route("/simulate_nfc_tap_out", methods=["GET", "POST"])
+def simulate_nfc_tap_out():
+    card_id = request.args.get("card_id") or request.form.get("card_id")
+    conn = get_db()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, card_id, name || ' ' || surname AS full_name, balance FROM users")
+    users = {row["card_id"]: row for row in cursor.fetchall()}
+    user = users.get(card_id)
+
+    message = None
+    if request.method == "POST":
+        lat = float(request.form.get("lat"))
+        lon = float(request.form.get("lon"))
+
+        trip = conn.execute('SELECT * FROM trip_sessions WHERE card_id = ?', (card_id,)).fetchone()
+        if not trip:
+            message = "❌ No Tap In found. Please tap in first."
+        else:
+            distance_km = calculate_distance_km(trip["start_lat"], trip["start_lon"], lat, lon)
+            fare = get_fare(distance_km)
+
+            if user["balance"] < fare:
+                message = f"❌ Insufficient balance (R{user['balance']:.2f}). Fare is R{fare:.2f}"
+            else:
+                new_balance = user["balance"] - fare
+                conn.execute('DELETE FROM trip_sessions WHERE card_id = ?', (card_id,))
+                conn.execute('UPDATE users SET balance = ? WHERE card_id = ?', (new_balance, card_id))
+                conn.execute('''
+                    INSERT INTO trip_history (card_id, name, start_time, end_time, fare)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (card_id, user['full_name'], trip['start_time'], time.time(), fare))
+                conn.commit()
+                message = f"✅ Tap Out complete. Fare: R{fare:.2f}. New balance: R{new_balance:.2f}"
+
+    return render_template("simulate_nfc_tap_out.html", card_id=card_id, user=user, message=message)
 
 
 @app.route('/tap_in', methods=['GET', 'POST'])

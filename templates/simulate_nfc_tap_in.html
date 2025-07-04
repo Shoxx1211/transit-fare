@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container mt-5">
+  <h2 class="mb-4 text-primary">🚍 NFC Simulation - Tap In</h2>
+
+  {% if message %}
+    <div class="alert alert-info">{{ message }}</div>
+  {% endif %}
+
+  <form method="POST" class="shadow p-4 rounded bg-light">
+    <input type="hidden" name="stage" value="tap_in">
+
+    <div class="mb-3">
+      <label for="card_id" class="form-label">Select User</label>
+      <select class="form-select" name="card_id" required>
+        {% for card_id, user in users.items() %}
+        <option value="{{ card_id }}">{{ user.full_name }} ({{ card_id }})</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="lat" class="form-label">Latitude</label>
+      <input type="number" step="any" name="lat" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+      <label for="lon" class="form-label">Longitude</label>
+      <input type="number" step="any" name="lon" class="form-control" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">🟢 Tap In</button>
+  </form>
+</div>
+{% endblock %}
