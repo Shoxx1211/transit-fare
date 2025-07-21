@@ -9,7 +9,12 @@ from datetime import datetime
 import requests
 from math import radians, cos, sin, asin, sqrt
 from db import DB_NAME, init_db, get_connection
-from config import PAYSTACK_SECRET_KEY
+from config import (
+    PAYSTACK_SECRET_KEY,
+    PAYSTACK_PUBLIC_KEY,
+    PAYSTACK_CALLBACK_URL,
+)
+
 
 app = Flask(__name__, template_folder='templates')
 app.secret_key = os.urandom(24)
@@ -195,6 +200,7 @@ def nfc_tap():
     INSERT INTO trip_history (card_id, name, start_time, end_time, fare)
     VALUES (?, ?, ?, ?, ?)
 ''', (card_id, user['name'], current_trip['start_time'], now, fare))
+
 
 # Track simulated tap-in sessions
 @app.route("/simulate_nfc", methods=["GET", "POST"])
@@ -422,19 +428,35 @@ def test_tap_out():
 # ------------------------------ PAYSTACK ------------------------------ #
 PAYSTACK_BASE_URL = 'https://api.paystack.co'
 
+def _build_callback_url():
+    """
+    Return the live callback URL to give Paystack.
+    We prefer config constant, but if missing, fall back to Flask url_for.
+    """
+    if PAYSTACK_CALLBACK_URL:
+        return PAYSTACK_CALLBACK_URL
+    # fallback (rare); ensure https
+    try:
+        return url_for('payment_callback', _external=True, _scheme='https')
+    except RuntimeError:
+        # no request context
+        return 'https://tethnix1211.pythonanywhere.com/payment/callback'
+
+
 @app.route('/top_up/<card_id>', methods=['GET', 'POST'])
 def top_up(card_id):
     conn = get_db()
     user = conn.execute('SELECT * FROM users WHERE card_id = ?', (card_id,)).fetchone()
-
     if not user:
         return "User not found", 404
 
     if request.method == 'POST':
-        amount = float(request.form.get('amount', 0))
-        email = user['email']
-
-        if amount <= 0:
+        raw_amount = request.form.get('amount', '').strip()
+        try:
+            amount = float(raw_amount)
+            if amount <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
             return "❌ Please enter a valid amount", 400
 
         headers = {
@@ -442,58 +464,158 @@ def top_up(card_id):
             'Content-Type': 'application/json'
         }
 
-        data = {
-            'email': email,
-            'amount': int(amount * 100),
+        payload = {
+            'email': user['email'],
+            'amount': int(amount * 100),   # Rands to cents
             'currency': 'ZAR',
             'metadata': {'card_id': card_id},
-            'callback_url': 'https://4901-41-150-250-231.ngrok-free.app/payment/callback'
+            'callback_url': PAYSTACK_CALLBACK_URL,  # Use the config constant directly
         }
 
-        response = requests.post(f'{PAYSTACK_BASE_URL}/transaction/initialize', json=data, headers=headers)
+        try:
+            resp = requests.post(f'{PAYSTACK_BASE_URL}/transaction/initialize',
+                                 json=payload, headers=headers, timeout=30)
+        except requests.RequestException as e:
+            print(f"[PAYSTACK][INIT][ERROR] {e}")
+            return "❌ Failed to contact payment processor", 502
 
-        if response.status_code == 200:
-            payment_url = response.json()['data']['authorization_url']
-            return redirect(payment_url)
-        else:
-            return "❌ Failed to initiate payment", 500
+        if resp.status_code != 200:
+            print(f"[PAYSTACK][INIT][HTTP {resp.status_code}] {resp.text}")
+            return "❌ Failed to initiate payment", 502
 
-    return render_template('top_up.html', user=user)
+        body = resp.json()
+        payment_url = body.get('data', {}).get('authorization_url')
+        if not payment_url:
+            print(f"[PAYSTACK][INIT][MALFORMED] {body}")
+            return "❌ Payment init response malformed", 502
+
+        return redirect(payment_url)
+
+    return render_template('top_up.html', user=user, paystack_public_key=PAYSTACK_PUBLIC_KEY)
 
 @app.route('/payment/callback')
 def payment_callback():
-    reference = request.args.get('reference')
+    """
+    Paystack redirects the user here after payment.
+    We verify the transaction server‑to‑server, validate currency (ZAR),
+    extract the card_id from metadata, credit the wallet exactly once,
+    and show a success/failure page.
+    """
+    reference = (request.args.get('reference') or '').strip()
     if not reference:
-        return "❌ No payment reference provided", 400
+        return "❌ No payment reference provided.", 400
 
+    print(f"[PAYSTACK][CALLBACK] reference={reference}")
+
+    # Verify with Paystack
     headers = {'Authorization': f'Bearer {PAYSTACK_SECRET_KEY}'}
-    response = requests.get(f'{PAYSTACK_BASE_URL}/transaction/verify/{reference}', headers=headers)
+    try:
+        resp = requests.get(
+            f'{PAYSTACK_BASE_URL}/transaction/verify/{reference}',
+            headers=headers,
+            timeout=30
+        )
+    except requests.RequestException as e:
+        print(f"[PAYSTACK][VERIFY][ERROR] {e}")
+        return "❌ Could not verify payment (network error).", 502
 
-    if response.status_code == 200:
-        data = response.json()['data']
+    if resp.status_code != 200:
+        print(f"[PAYSTACK][VERIFY][HTTP {resp.status_code}] {resp.text}")
+        return "❌ Could not verify payment (bad response).", 502
 
-        if data['status'] != 'success':
-            return "❌ Payment was not successful", 400
+    body = resp.json()
+    data = body.get('data') or {}
+    status = data.get('status')
+    currency = data.get('currency')
+    amount_subunits = data.get('amount')  # cents
+    metadata = data.get('metadata') or {}
+    card_id = metadata.get('card_id')
+    paid_at = data.get('paid_at')  # ISO string from Paystack (may be None)
 
-        # Check currency is ZAR
-        if data.get('currency') != 'ZAR':
-            return "❌ Payment currency mismatch", 400
+    print(f"[PAYSTACK][VERIFY] status={status} currency={currency} "
+          f"amount_subunits={amount_subunits} card_id={card_id}")
 
-        amount = data['amount'] / 100  # Convert from kobo/cents to rands
-        card_id = data['metadata']['card_id']
+    # Basic validations
+    if status != 'success':
+        return "❌ Payment was not successful.", 400
+    if currency != 'ZAR':
+        return f"❌ Payment currency mismatch (expected ZAR, got {currency}).", 400
+    if card_id is None:
+        print(f"[PAYSTACK][VERIFY][WARN] Missing card_id in metadata for ref={reference}")
+        return "❌ Missing card reference in payment metadata.", 400
 
-        conn = get_db()
-        user = conn.execute('SELECT * FROM users WHERE card_id = ?', (card_id,)).fetchone()
+    # Convert cents to Rands safely
+    try:
+        amount = float(amount_subunits) / 100.0
+    except (TypeError, ValueError):
+        print(f"[PAYSTACK][VERIFY][WARN] Bad amount in response: {amount_subunits!r}")
+        return "❌ Invalid amount returned by payment processor.", 400
 
-        if user:
-            new_balance = user['balance'] + amount
-            conn.execute('UPDATE users SET balance = ? WHERE card_id = ?', (new_balance, card_id))
-            conn.commit()
-            return render_template('payment_success.html', card_id=card_id, amount=amount, balance=new_balance)
-        else:
-            return "❌ User not found", 404
-    else:
-        return "❌ Payment verification failed", 400
+    conn = get_db()
+
+    # --- OPTIONAL: ensure we have a topups table for idempotency ---
+    # This CREATE TABLE IF NOT EXISTS is cheap in SQLite; safe to leave here.
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS topups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference TEXT UNIQUE,
+            card_id TEXT,
+            amount REAL,
+            status TEXT,
+            paid_at TEXT
+        )
+    """)
+
+    # If we've already processed this Paystack reference successfully, don't re‑credit.
+    existing = conn.execute(
+        "SELECT * FROM topups WHERE reference = ? AND status = 'success'",
+        (reference,)
+    ).fetchone()
+
+    if existing:
+        print(f"[PAYSTACK][IDEMPOTENT] reference {reference} already processed; skipping re‑credit.")
+        # Show current balance
+        user = conn.execute('SELECT * FROM users WHERE card_id = ?', (existing['card_id'],)).fetchone()
+        if not user:
+            return "❌ (Previously processed) user not found.", 404
+        return render_template(
+            'payment_success.html',
+            card_id=existing['card_id'],
+            amount=existing['amount'],
+            balance=user['balance']
+        )
+
+    # Credit user
+    user = conn.execute('SELECT * FROM users WHERE card_id = ?', (card_id,)).fetchone()
+    if not user:
+        print(f"[PAYSTACK][VERIFY][ERR] User with card_id {card_id} not found.")
+        return "❌ User not found.", 404
+
+    new_balance = (user['balance'] or 0) + amount
+
+    # Update wallet + record topup in one transaction
+    try:
+        conn.execute('UPDATE users SET balance = ? WHERE card_id = ?', (new_balance, card_id))
+        conn.execute(
+            "INSERT OR IGNORE INTO topups (reference, card_id, amount, status, paid_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (reference, card_id, amount, 'success', paid_at)
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"[PAYSTACK][DB][ERROR] {e}")
+        return "❌ Failed to update wallet after payment.", 500
+
+    print(f"[PAYSTACK][CREDITED] card_id={card_id} +R{amount:.2f} => balance R{new_balance:.2f}")
+
+    return render_template(
+        'payment_success.html',
+        card_id=card_id,
+        amount=amount,
+        balance=new_balance
+    )
+
 
 # ------------------------------ MAIN ------------------------------ #
 if __name__ == '__main__':
