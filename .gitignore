@@ -1,0 +1,3 @@
+__pycache__/
+*.pyc
+transit_fare.db
