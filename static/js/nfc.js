@@ -1,9 +1,4 @@
-document.addEventListener("DOMContentLoaded", function () {
-  const tapButton = document.getElementById("tapButton");
-  const cardSelect = document.getElementById("cardSelect");
-  const messageDiv = document.getElementById("message");
-
-  tapButton.addEventListener("click", function () {
+ton.addEventListener("click", function () {
     const cardId = cardSelect.value;
 
     if (!cardId) {
@@ -37,10 +32,3 @@ document.addEventListener("DOMContentLoaded", function () {
             messageDiv.innerHTML = "❌ An error occurred during NFC tap.";
           });
       },
-      (error) => {
-        console.error(error);
-        messageDiv.innerHTML = "❌ Failed to get location.";
-      }
-    );
-  });
-});
