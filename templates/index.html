@@ -1,5 +1,62 @@
-{% extends 'base.html' %}
-{% block content %}
-  <h2>Welcome to the Re-LoadiT Transit Fare System</h2>
-  <a href="{{ url_for('register') }}">Register New User</a>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transit Fare | Home</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(to right, #007bff, #00bcd4);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .card {
+            border: none;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+            background: #fff;
+            color: #000;
+            padding: 2rem;
+            max-width: 450px;
+            width: 100%;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            border: none;
+            transition: 0.3s;
+        }
+        .btn-primary:hover {
+            background-color: #0069d9;
+        }
+        footer {
+            position: absolute;
+            bottom: 20px;
+            text-align: center;
+            width: 100%;
+            color: rgba(255,255,255,0.8);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="card text-center">
+        <h1 class="mb-3">Welcome to Transit Fare</h1>
+        <p class="lead mb-4">Your seamless, secure way to travel with NFC Tap In & Tap Out.</p>
+
+        <div class="d-flex justify-content-center gap-3">
+            <a href="{{ url_for('register') }}" class="btn btn-primary btn-lg px-5">Register</a>
+            <a href="{{ url_for('login') }}" class="btn btn-outline-secondary btn-lg px-5">Login</a>
+        </div>
+    </div>
+
+    <footer>
+        &copy; {{ current_year }} Transit Fare. All rights reserved.
+    </footer>
+
+</body>
+</html>

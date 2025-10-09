@@ -372,7 +372,12 @@ def get_fare(distance_km):
 # ------------------------------ ROUTES ------------------------------ #
 @app.route('/')
 def home():
-    return render_template('index.html')
+    # If user is logged in, redirect to dashboard (or account page)
+    if 'user_id' in session:
+        return redirect(url_for('dashboard'))
+
+    # Otherwise, show home page with register + login options
+    return render_template('index.html', current_year=datetime.now().year)
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
@@ -428,21 +433,19 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/dashboard/<card_id>')
-def dashboard(card_id):
-    conn = get_db()
-    user = conn.execute("SELECT * FROM users WHERE card_id = ?", (card_id,)).fetchone()
-    if not user:
-        return "User not found", 404
-    return render_template("dashboard.html", user=user)
+@app.route('/dashboard')
+def dashboard():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
 
-@app.template_filter('datetimeformat')
-def datetimeformat(value, format='full'):
-    try:
-        dt = datetime.fromtimestamp(value)
-        return dt.strftime('%Y-%m-%d' if format == 'date' else '%Y-%m-%d %H:%M:%S')
-    except:
-        return "Invalid"
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (session['user_id'],)).fetchone()
+
+    if not user:
+        session.clear()
+        return redirect(url_for('login'))
+
+    return render_template('dashboard.html', user=user)
 
 @app.route('/history/<card_id>')
 def trip_history(card_id):
